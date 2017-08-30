@@ -20,14 +20,18 @@ package org.bigbluebutton.core
 {
   import mx.collections.ArrayCollection;
   
-  import org.bigbluebutton.common.LogUtil;
+  import org.as3commons.logging.api.ILogger;
+  import org.as3commons.logging.api.getClassLogger;
   import org.bigbluebutton.core.managers.UserManager;
   import org.bigbluebutton.core.vo.CameraSettingsVO;
   import org.bigbluebutton.main.model.users.BBBUser;
-
+  import org.bigbluebutton.util.SessionTokenUtil;
+  
   public class UsersUtil
   {
     
+	private static const LOGGER:ILogger = getClassLogger(UsersUtil);
+
     public static function isUserLeaving(userID:String):Boolean {
       var user:BBBUser = getUser(userID);
       if (user != null) {
@@ -55,18 +59,30 @@ package org.bigbluebutton.core
       return false;
     }
     
-    public static function amIPublishing():CameraSettingsVO {
-     return UserManager.getInstance().getConference().amIPublishing();
+	public static function setUserEjected():void {
+		UserManager.getInstance().getConference().setUserEjectedFromMeeting();	
+	}
+	
+	public static function isUserEjected():Boolean {
+		return UserManager.getInstance().getConference().getUserEjectedFromMeeting();
+	}
+	
+  public static function isRecorded():Boolean {
+    return UserManager.getInstance().getConference().record;
+  }
+  
+    public static function amIPublishing():ArrayCollection {
+     return UserManager.getInstance().getConference().amIPublishing() as ArrayCollection;
     }
-    
-    public static function setIAmPublishing(publishing:Boolean):void {
-      UserManager.getInstance().getConference().setCamPublishing(publishing);
+
+    public static function addCameraSettings(camSettings:CameraSettingsVO):void {
+      UserManager.getInstance().getConference().addCameraSettings(camSettings);
     }
-    
-    public static function setCameraSettings(camSettings:CameraSettingsVO):void {
-      UserManager.getInstance().getConference().setCameraSettings(camSettings);
+
+    public static function removeCameraSettings(camIndex:int):void {
+      UserManager.getInstance().getConference().removeCameraSettings(camIndex);
     }
-    
+
     public static function hasWebcamStream(userID:String):Boolean {
       var u:BBBUser = getUser(userID);
       if (u != null) {
@@ -76,10 +92,10 @@ package org.bigbluebutton.core
       return false;
     }
     
-    public static function getWebcamStream(userID:String):String {
+    public static function getWebcamStream(userID:String):Array {
       var u:BBBUser = getUser(userID);
       if (u != null && u.hasStream) {
-        return u.streamName;
+        return u.streamNames;
       }
       
       return null;
@@ -96,6 +112,10 @@ package org.bigbluebutton.core
     public static function getAvatarURL():String {
       return UserManager.getInstance().getConference().avatarURL;
     }
+
+    public static function getUserAvatarURL(userID:String):String {
+       return UserManager.getInstance().getConference().getUserAvatarURL(userID);
+    }	
 	
 	public static function getVoiceBridge():String {
 		return UserManager.getInstance().getConference().voiceBridge;
@@ -120,11 +140,7 @@ package org.bigbluebutton.core
     public static function amIPresenter():Boolean {
       return UserManager.getInstance().getConference().amIPresenter;
     }
-    
-    public static function getVoiceUser(voiceUserID:Number):BBBUser {
-      return UserManager.getInstance().getConference().getVoiceUser(voiceUserID);
-    }
-    
+        
     public static function hasUser(userID:String):Boolean {
       return UserManager.getInstance().getConference().hasUser(userID);
     }
@@ -156,20 +172,24 @@ package org.bigbluebutton.core
     public static function internalUserIDToExternalUserID(userID:String):String {
       var user:BBBUser = UserManager.getInstance().getConference().getUser(userID);
       if (user != null) {
-        LogUtil.debug("Found externUserID [" + user.externUserID + "] for userID [" + userID + "]");
         return user.externUserID;
       }
-      LogUtil.warn("Could not find externUserID for userID [" + userID + "]");
-      return null;
+      var logData:Object = UsersUtil.initLogData();
+      logData.tags = ["user-util"];
+      logData.message = "Could not find externUserID for userID:".concat(userID);
+      LOGGER.warn(JSON.stringify(logData));
+      return "";
     }
     
     public static function externalUserIDToInternalUserID(externUserID:String):String {
       var user:BBBUser = UserManager.getInstance().getConference().getUserWithExternUserID(externUserID);
       if (user != null) {
-        LogUtil.debug("Found userID [" + user.userID + "] for externUserID [" + externUserID + "]");
         return user.userID;
       }
-      LogUtil.warn("Could not find userID for externUserID [" + externUserID + "]");
+      var logData:Object = UsersUtil.initLogData();
+      logData.tags = ["user-util"];
+      logData.message = "Could not find userID for externUserID:".concat(externUserID);
+      LOGGER.warn(JSON.stringify(logData));
       return null;
     }    
     
@@ -179,6 +199,42 @@ package org.bigbluebutton.core
         return user.name;
       }
       return null;
+    }
+    
+    private static function getUserData():Object {
+      var userData:Object = new Object();
+      userData.meetingId = getInternalMeetingID();
+      userData.externalMeetingId = getExternalMeetingID();
+      userData.meetingName = UserManager.getInstance().getConference().meetingName;
+      userData.userId = getMyUserID();
+      userData.username = getMyUsername();
+      
+      return userData;
+    }
+	
+	public static function isAnyoneLocked():Boolean {
+		var users:ArrayCollection = UserManager.getInstance().getConference().users;
+		for(var i:uint = 0; i<users.length; i++) {
+			var user:BBBUser = users.getItemAt(i) as BBBUser;
+			if(user.userLocked)
+				return true;
+		}
+		return false;
+	}
+    
+    
+    public static function initLogData():Object {
+        var logData:Object = new Object();
+        if (getInternalMeetingID() != null) {
+            logData.user = UsersUtil.getUserData();
+        }
+        logData.sessionToken = getUserSession();
+        return logData;
+    }
+    
+    public static function getUserSession():String {
+        var sessionUtil:SessionTokenUtil = new SessionTokenUtil()
+        return sessionUtil.getSessionToken();
     }
     
   }

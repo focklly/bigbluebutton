@@ -2,27 +2,27 @@ function setTitle(title){
     document.title= "BigBlueButton - " + title;
 }
 
-var i = 1;
-function addAlert(message){
-	var target = document.getElementById( 'notifications' ),
-    contentDiv = document.createElement( "div" );	
-	contentDiv.id = "alertDiv" + i;
-	i++;
-	//contentDiv.innerHTML = "<p>" + message + "</p>";
-	contentDiv.innerHTML = message;
-	contentDiv.style.display = "block";
-	target.appendChild( contentDiv );
-	target.hide();
-	target.setAttribute("role","alert");
-	target.show();
-	contentDiv.hide();
-	contentDiv.setAttribute("role","alert");
-	contentDiv.show();
+function clientReady(message){
+	var target = document.getElementById("clientReady");
+	if (target) target.innerHTML = message;
+}
+
+function setProgressBar(percent){
+	var bar = document.getElementById("accessibile-progress");
+	if (bar) {
+		bar.setAttribute("aria-valuenow", percent);
+		bar.innerHTML = percent + " " + "%";
+	}
+}
+
+function removeProgressBar(){
+	var bar = document.getElementById("accessibile-progress");
+	if (bar) bar.parentNode.removeChild(bar);
 }
 
 function determineModifier()
 {
-	var browser = determineBrowser();
+	var browser = determineBrowser()[0];
 	var modifier;
 	if (browser == "Firefox"){
 		modifier = "control+";
@@ -44,7 +44,7 @@ function determineModifier()
 
 function determineGlobalModifier()
 {
-	var browser = determineBrowser();
+	var browser = determineBrowser()[0];
 	var modifier;
 	if (browser == "Firefox"){
 		modifier = "control+shift+";
@@ -60,6 +60,28 @@ function determineGlobalModifier()
 	//}
 	else{
 		modifier = "control+alt+";
+	}
+	return modifier;
+}
+
+function determineGlobalAlternateModifier()
+{
+	var browser = determineBrowser()[0];
+	var modifier;
+	if (browser == "Firefox"){
+		modifier = "control+";
+	}
+	else if (browser == "Chrome"){
+		modifier = "control+";
+	}
+	else if (browser == "Microsoft Internet Explorer"){
+		modifier = "control+shift+";
+	}
+	//else if (browser == "Safari"){
+	//	modifier = "control+alt";
+	//}
+	else{
+		modifier = "control+shift+";
 	}
 	return modifier;
 }
@@ -84,6 +106,20 @@ function determineBrowser()
 	// In MSIE, the true version is after "MSIE" in userAgent
 	else if ((verOffset=nAgt.indexOf("MSIE"))!=-1) {
 		browserName = "Microsoft Internet Explorer";
+		fullVersion = nAgt.substring(verOffset+5);
+	}
+	// In Puffin, the true version is after "Puffin" in userAgent
+	else if ((verOffset=nAgt.indexOf("Puffin"))!=-1) {
+		browserName = "Puffin";
+		fullVersion = nAgt.substring(verOffset+7);
+	}
+	// search for Edge before Chrome or Safari because Microsoft
+	// includes Chrome and Safari user agents in Edge's UA
+	// In Microsoft Edge, the true version is the last chunk of the UA
+	// it follows "Edge"
+	else if ((verOffset=nAgt.indexOf("Edge"))!=-1) {
+		browserName = "Edge";
+		// "Edge".length = 4, plus 1 character for the trailing slash
 		fullVersion = nAgt.substring(verOffset+5);
 	}
 	// In Chrome, the true version is after "Chrome" 
@@ -124,5 +160,5 @@ function determineBrowser()
 		majorVersion = parseInt(navigator.appVersion,10);
 	}
 	
-	return browserName;
+	return [browserName, majorVersion, fullVersion];
 }

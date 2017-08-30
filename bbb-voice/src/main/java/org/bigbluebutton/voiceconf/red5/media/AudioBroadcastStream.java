@@ -26,7 +26,8 @@ import org.red5.logging.Red5LoggerFactory;
 import org.red5.server.api.event.IEvent;
 import org.red5.server.api.scope.IScope;
 import org.red5.server.api.stream.IBroadcastStream;
-import org.red5.server.api.stream.IStreamCodecInfo;
+import org.red5.codec.IStreamCodecInfo;
+import org.red5.codec.StreamCodecInfo;
 import org.red5.server.api.stream.IStreamListener;
 import org.red5.server.api.stream.ResourceExistException;
 import org.red5.server.api.stream.ResourceNotFoundException;
@@ -38,11 +39,8 @@ import org.red5.server.messaging.OOBControlMessage;
 import org.red5.server.messaging.PipeConnectionEvent;
 import org.red5.server.net.rtmp.event.IRTMPEvent;
 import org.red5.server.net.rtmp.event.Notify;
-import org.red5.server.stream.codec.StreamCodecInfo;
 import org.red5.server.stream.message.RTMPMessage;
-
 import org.slf4j.Logger;
-
 import org.red5.server.api.stream.IStreamPacket;;
 
 public class AudioBroadcastStream implements IBroadcastStream, IProvider, IPipeConnectionListener {
@@ -151,33 +149,21 @@ public class AudioBroadcastStream implements IBroadcastStream, IProvider, IPipeC
 
 	public void onPipeConnectionEvent(PipeConnectionEvent event) {
 		log.trace("onPipeConnectionEvent(event:{})", event);
-		switch (event.getType()) {
-	    	case PipeConnectionEvent.PROVIDER_CONNECT_PUSH:
-	    		log.trace("PipeConnectionEvent.PROVIDER_CONNECT_PUSH");
-	    		System.out.println("PipeConnectionEvent.PROVIDER_CONNECT_PUSH");
-	    		if (event.getProvider() == this
-	    				&& (event.getParamMap() == null 
-	    				|| !event.getParamMap().containsKey("record"))) {
-	    			log.trace("Creating a live pipe");
-	    			this.livePipe = (IPipe) event.getSource();
-	    		}
-	    		break;
-	    	case PipeConnectionEvent.PROVIDER_DISCONNECT:
-	    		log.trace("PipeConnectionEvent.PROVIDER_DISCONNECT");
-	    		if (this.livePipe == event.getSource()) {
-	    			log.trace("PipeConnectionEvent.PROVIDER_DISCONNECT - this.mLivePipe = null;");
-	    			this.livePipe = null;
-	    		}
-	    		break;
-	    	case PipeConnectionEvent.CONSUMER_CONNECT_PUSH:
-	    		log.trace("PipeConnectionEvent.CONSUMER_CONNECT_PUSH");
-	    		break;
-	    	case PipeConnectionEvent.CONSUMER_DISCONNECT:
-	    		log.trace("PipeConnectionEvent.CONSUMER_DISCONNECT");
-	    		break;
-	    	default:
-	    		log.trace("PipeConnectionEvent default");
-	    		break;
+		if (event.getType() == PipeConnectionEvent.EventType.PROVIDER_CONNECT_PUSH) {
+			log.trace("PipeConnectionEvent.PROVIDER_CONNECT_PUSH");
+			System.out.println("PipeConnectionEvent.PROVIDER_CONNECT_PUSH");
+			if (event.getProvider() == this
+					&& (event.getParamMap() == null
+					|| !event.getParamMap().containsKey("record"))) {
+				log.trace("Creating a live pipe");
+				this.livePipe = (IPipe) event.getSource();
+			}
+		} else if (event.getType() == PipeConnectionEvent.EventType.PROVIDER_DISCONNECT) {
+			log.trace("PipeConnectionEvent.PROVIDER_DISCONNECT");
+			if (this.livePipe == event.getSource()) {
+				log.trace("PipeConnectionEvent.PROVIDER_DISCONNECT - this.mLivePipe = null;");
+				this.livePipe = null;
+			}
 		}
 	}
 	

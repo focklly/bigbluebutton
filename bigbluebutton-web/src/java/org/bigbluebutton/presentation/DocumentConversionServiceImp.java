@@ -23,52 +23,68 @@ import org.bigbluebutton.api.messaging.MessagingService;
 import org.bigbluebutton.presentation.imp.ImageToSwfSlidesGenerationService;
 import org.bigbluebutton.presentation.imp.OfficeToPdfConversionService;
 import org.bigbluebutton.presentation.imp.PdfToSwfSlidesGenerationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DocumentConversionServiceImp implements DocumentConversionService {
-	private MessagingService messagingService;
-	private OfficeToPdfConversionService officeToPdfConversionService;
-	private PdfToSwfSlidesGenerationService pdfToSwfSlidesGenerationService;
-	private ImageToSwfSlidesGenerationService imageToSwfSlidesGenerationService;
-	
-	public void processDocument(UploadedPresentation pres) {
-		SupportedDocumentFilter sdf = new SupportedDocumentFilter(messagingService);
-		if (sdf.isSupported(pres)) {
-			String fileType = pres.getFileType();
-			
-			if (SupportedFileTypes.isOfficeFile(fileType)) {
-				officeToPdfConversionService.convertOfficeToPdf(pres);
-				OfficeToPdfConversionSuccessFilter ocsf = new OfficeToPdfConversionSuccessFilter(messagingService);
-				if (ocsf.didConversionSucceed(pres)) {
-					// Successfully converted to pdf. Call the process again, this time it should be handled by 
-					// the PDF conversion service.
-					processDocument(pres);
-				}
-			} else if (SupportedFileTypes.isPdfFile(fileType)) {
-				pdfToSwfSlidesGenerationService.generateSlides(pres);
-			} else if (SupportedFileTypes.isImageFile(fileType)) {
-				imageToSwfSlidesGenerationService.generateSlides(pres);
-			} else {
-				
-			}
-						
-		} else {
-			// TODO: error log
-		}
-	}
-	
-	public void setMessagingService(MessagingService m) {
-		messagingService = m;
-	}
-	
-	public void setOfficeToPdfConversionService(OfficeToPdfConversionService s) {
-		officeToPdfConversionService = s;
-	}
-	
-	public void setPdfToSwfSlidesGenerationService(PdfToSwfSlidesGenerationService s) {
-		pdfToSwfSlidesGenerationService = s; 
-	}
-	
-	public void setImageToSwfSlidesGenerationService(ImageToSwfSlidesGenerationService s) {
-		imageToSwfSlidesGenerationService = s;
-	}
+  private static Logger log = LoggerFactory
+      .getLogger(DocumentConversionServiceImp.class);
+
+  private MessagingService messagingService;
+  private OfficeToPdfConversionService officeToPdfConversionService;
+  private PdfToSwfSlidesGenerationService pdfToSwfSlidesGenerationService;
+  private ImageToSwfSlidesGenerationService imageToSwfSlidesGenerationService;
+
+  public void processDocument(UploadedPresentation pres) {
+    SupportedDocumentFilter sdf = new SupportedDocumentFilter(messagingService);
+    log.info("Start presentation conversion. meetingId=" + pres.getMeetingId()
+        + " presId=" + pres.getId() + " name=" + pres.getName());
+
+    if (sdf.isSupported(pres)) {
+      String fileType = pres.getFileType();
+
+      if (SupportedFileTypes.isOfficeFile(fileType)) {
+        pres = officeToPdfConversionService.convertOfficeToPdf(pres);
+        OfficeToPdfConversionSuccessFilter ocsf = new OfficeToPdfConversionSuccessFilter(
+            messagingService);
+        if (ocsf.didConversionSucceed(pres)) {
+          // Successfully converted to pdf. Call the process again, this time it
+          // should be handled by
+          // the PDF conversion service.
+          processDocument(pres);
+        }
+      } else if (SupportedFileTypes.isPdfFile(fileType)) {
+        pdfToSwfSlidesGenerationService.generateSlides(pres);
+      } else if (SupportedFileTypes.isImageFile(fileType)) {
+        imageToSwfSlidesGenerationService.generateSlides(pres);
+      } else {
+
+      }
+
+    } else {
+      // TODO: error log
+    }
+
+    log.info("End presentation conversion. meetingId=" + pres.getMeetingId()
+        + " presId=" + pres.getId() + " name=" + pres.getName());
+
+  }
+
+  public void setMessagingService(MessagingService m) {
+    messagingService = m;
+  }
+
+  public void setOfficeToPdfConversionService(OfficeToPdfConversionService s) {
+    officeToPdfConversionService = s;
+  }
+
+  public void setPdfToSwfSlidesGenerationService(
+      PdfToSwfSlidesGenerationService s) {
+    pdfToSwfSlidesGenerationService = s;
+  }
+
+  public void setImageToSwfSlidesGenerationService(
+      ImageToSwfSlidesGenerationService s) {
+    imageToSwfSlidesGenerationService = s;
+  }
 }

@@ -25,12 +25,6 @@ require 'nokogiri'
 
 module BigBlueButton
   class Presentation
-    OPTIONS = "-sDEVICE=pdfwrite -dNOPAUSE -dQUIET -dBATCH -dUseCropBox"
-    FIRSTPAGE = "-dFirstPage"
-    LASTPAGE = "-dLastPage"
-    NO_PDF_MARK_WORKAROUND = "/etc/bigbluebutton/nopdfmark.ps"
-    OUTPUTFILE = "-sOutputFile"
-
     # Get the presentations.
     def self.get_presentations(events_xml)
       BigBlueButton.logger.info("Task: Getting presentations from events")      
@@ -48,28 +42,19 @@ module BigBlueButton
       Dir.glob("#{presentation_dir}/*.swf").size
     end
 
-    # Extract a page from the pdf file.    
-    def self.extract_page_from_pdf(page_num, pdf_presentation, pdf_out)
-        BigBlueButton.logger.info("Task: Extracting a page from pdf file")      
-        temp_out = "/tmp/#{File.basename(pdf_out)}"
-        command = "ghostscript #{OPTIONS} #{FIRSTPAGE}=#{page_num} #{LASTPAGE}=#{page_num} #{OUTPUTFILE}=#{temp_out} #{NO_PDF_MARK_WORKAROUND} #{pdf_presentation}"
-        BigBlueButton.execute(command)
-        FileUtils.mv(temp_out,pdf_out)
- #       Process.wait
-    end
-
     # Extract a page from a pdf file as a png image
     def self.extract_png_page_from_pdf(page_num, pdf_presentation, png_out, resize = '800x600')
       BigBlueButton.logger.info("Task: Extracting a page from pdf file as png image")
-      temp_out = "/tmp/#{File.basename(png_out)}"
-      command = "ghostscript -dSAFER -dBATCH -dNOPAUSE -dQUIET -dFirstPage=#{page_num} -dLastPage=#{page_num} -sDEVICE=png16m -dUseCropBox -dGraphicsAlphaBits=4 -dTextAlphaBits=4 -r300 -sOutputFile=#{temp_out} #{NO_PDF_MARK_WORKAROUND} #{pdf_presentation}"
+      temp_out = "#{File.dirname(png_out)}/temp-#{File.basename(png_out, '.png')}"
+      command = "pdftocairo -png -f #{page_num} -l #{page_num} -r 300 -singlefile #{pdf_presentation} #{temp_out}"
       status = BigBlueButton.execute(command, false)
-      if status.success?
+      temp_out += ".png"
+      if status.success? and File.exist?(temp_out)
         # Resize to the requested size
         command = "convert #{temp_out} -resize #{resize} -quality 90 +dither -depth 8 -colors 256 #{png_out}"
         BigBlueButton.execute(command)
       else
-        # If page extraction failed, generate a blank white image at requested size
+        # If page extraction failed, generate a blank white image
         command = "convert -size #{resize} xc:white -quality 90 +dither -depth 8 -colors 256 #{png_out}"
         BigBlueButton.execute(command)
       end
@@ -79,18 +64,57 @@ module BigBlueButton
     
     # Convert a pdf page to a png.
     def self.convert_pdf_to_png(pdf_page, png_out)
-        BigBlueButton.logger.info("Task: Converting .pdf to .png")      
-        command = "convert -density 300x300 #{pdf_page} -background white -flatten -resize 800x600 -quality 90 +dither -depth 8 -colors 256 #{png_out}"
-        BigBlueButton.execute(command)
-#        Process.wait  
+      self.extract_png_page_from_pdf(1, pdf_page, png_out, '800x600')
     end
 
-    #Convert an image to a png	
-    def self.convert_image_to_png(image,png_image)
-        BigBlueButton.logger.info("Task: Converting image to .png")      
-        command="convert #{image} -resize 800x600 -background white -flatten #{png_image}"
-        BigBlueButton.execute(command)
+    # Convert an image to a png
+    def self.convert_image_to_png(image, png_image, resize = '800x600')
+      BigBlueButton.logger.info("Task: Converting image to .png")
+      command = "convert #{image} -resize #{resize} -background white -flatten #{png_image}"
+      BigBlueButton.execute(command)
     end
 
+    # Gathers the text from the slide
+    def self.get_text_from_slide(textfiles_dir, slide_num)
+      text_from_slide = nil
+      begin
+        text_from_slide = File.open("#{textfiles_dir}/slide-#{slide_num}.txt") {|f| f.readline}
+        text_from_slide = text_from_slide.strip.encode(:xml => :text) unless text_from_slide == nil
+      rescue Exception => e
+        #do nothing
+      end
+      text_from_slide
+    end
+
+    # Get from events the presentation that will be used for preview.
+    def self.get_presentation_for_preview(process_dir)
+      events_xml = "#{process_dir}/events.xml"
+      BigBlueButton.logger.info("Task: Getting from events the presentation to be used for preview")
+      presentation = {}
+      doc = Nokogiri::XML(File.open(events_xml))
+      doc.xpath("//event[@eventname='SharePresentationEvent']").each do |presentation_event|
+        # Extract presentation data from events
+        presentation_id = presentation_event.xpath("presentationName").text
+        presentation_filename = presentation_event.xpath("originalFilename").text
+        # Set textfile directory
+        textfiles_dir = "#{process_dir}/presentation/#{presentation_id}/textfiles"
+        # Set presentation hashmap to be returned
+        unless presentation_filename == "default.pdf"
+          presentation[:id] = presentation_id
+          presentation[:filename] = presentation_filename
+          presentation[:slides] = {}
+          for i in 1..3
+            if File.file?("#{textfiles_dir}/slide-#{i}.txt")
+              text_from_slide = self.get_text_from_slide(textfiles_dir, i)
+              presentation[:slides][i] = { :alt => text_from_slide == nil ? '' : text_from_slide }
+            end
+          end
+          # Break because something else than default.pdf was found
+          break
+        end
+      end
+      presentation
+    end
   end
+
 end

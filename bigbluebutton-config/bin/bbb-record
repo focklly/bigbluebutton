@@ -19,6 +19,7 @@
 # Author(s):
 #       Fred Dixon <ffdixon@bigbluebutton.org>
 #       Gustavo Salazar <guga.salazar.loor@gmail.com>
+#       Ghazi Triki <ghazi.nocturne@gmail.com>
 #
 # Changelog:
 #   2011-08-18 FFD  Inital Version
@@ -31,6 +32,9 @@
 #   2013-04-03 GUG  Enable/Disable a recording workflow
 #   2013-04-05 GUG  Description is optional in bbb-record --watch
 #   2013-04-05 GUG  Map internal meeting id with external meeting id
+#   2016-07-02 FFD  Updates for 1.1-beta
+#   2016-10-17 GTR  Stricter rule for detection of recording directories names
+#   2017-04-28 FFD  Updated references to systemd processing units
 
 #set -e
 #set -x
@@ -39,14 +43,15 @@ BASE=/var/bigbluebutton/recording
 STATUS=$BASE/status
 source /etc/bigbluebutton/bigbluebutton-release
 
-SERVLET_DIR=/var/lib/tomcat6/webapps
+SERVLET_CONTAINER=tomcat7
+SERVLET_DIR=/var/lib/$SERVLET_CONTAINER/webapps
 BBB_WEB=$(cat ${SERVLET_DIR}/bigbluebutton/WEB-INF/classes/bigbluebutton.properties | sed -n '/^bigbluebutton.web.serverURL/{s/.*\///;p}')
 
 RECORDING_DIR=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(recording_dir\)/{s/.*recording_dir:[ ]*//;s/;//;p}')
 PUBLISHED_DIR=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(published_dir\)/{s/.*published_dir:[ ]*//;s/;//;p}')
 RAW_AUDIO_SRC=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(raw_audio_src\)/{s/.*raw_audio_src:[ ]*//;s/;//;p}')
 RAW_VIDEO_SRC=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(raw_video_src\)/{s/.*raw_video_src:[ ]*//;s/;//;p}')
-RAW_DESKSHARE_SRC=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(raw_deskshare_src\)/{s/.*raw_deskshare_src:[ ]*//;s/;//;p}')
+RAW_SCREENSHARE_SRC=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(raw_screenshare_src\)/{s/.*raw_screenshare_src:[ ]*//;s/;//;p}')
 RAW_PRESENTATION_SRC=$(cat /usr/local/bigbluebutton/core/scripts/bigbluebutton.yml | sed -n '/\(raw_presentation_src\)/{s/.*raw_presentation_src:[ ]*//;s/;//;p}')
 
 TYPES=$(cd /usr/local/bigbluebutton/core/scripts/process; ls *.rb | sed s/.rb//g)
@@ -54,56 +59,49 @@ TYPES=$(cd /usr/local/bigbluebutton/core/scripts/process; ls *.rb | sed s/.rb//g
 mark_for_rebuild() {
 	MEETING_ID=$1
 	echo "Marking for rebuild $MEETING_ID"
-	#set -x
+	if [[ ! -d $BASE/raw/$MEETING_ID ]]; then
+		echo "Raw files for $MEETING_ID do not exist, can't rebuild"
+		exit 1
+	fi
+
+	# Clear out the relevant done files
+	rm -vf $STATUS/archived/$MEETING_ID.norecord
+	rm -vf $STATUS/sanity/$MEETING_ID*
+	rm -vf $STATUS/processed/$MEETING_ID*
+	rm -vf $STATUS/published/$MEETING_ID*
+
+	# Remove the existing 'published' recording files
 	for type in $TYPES; do
-                if [ -d $BASE/process/$type/$MEETING_ID ]; then
-                        rm -rf $BASE/process/$type/$MEETING_ID
-#                else
-#                        echo "Warn: Didn't find $BASE/process/$type/$MEETING_ID"
-#                        exit 1
-                fi
-
-                if [ -f $STATUS/processed/$MEETING_ID-$type.done ]; then
-                        rm $STATUS/processed/$MEETING_ID-$type.done
-#                else
-#                        echo "Warn: Didn't find $STATUS/processed/$MEETING_ID-$type.done"
-#                        exit 1
-                fi
-
-                if [ -d $BASE/publish/$type/$MEETING_ID ]; then
-			rm -rf $BASE/publish/$type/$MEETING_ID
-		fi
-
-                if [ -d /var/bigbluebutton/processed/$type/$MEETING_ID ]; then
-                        rm -rf /var/bigbluebutton/published/$type/$MEETING_ID
-                fi
-
-                if [ -d /var/bigbluebutton/published/$type/$MEETING_ID ]; then
-                        rm -rf /var/bigbluebutton/published/$type/$MEETING_ID
-                fi
-
-                if [ -d /var/bigbluebutton/unpublished/$type/$MEETING_ID ]; then
-                        rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID
-                fi
+		rm -rf /var/bigbluebutton/published/$type/$MEETING_ID
+		rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID
+		rm -rf /var/bigbluebutton/deleted/$type/$MEETING_ID
 	done
+
+	# Restart processing at the 'archived' step
+	touch $STATUS/archived/$MEETING_ID.done
 }
 
 mark_for_republish() { 
 	MEETING_ID=$1
-	#set -x
-	for type in $TYPES; do                
-                if [ -d $BASE/publish/$type/$MEETING_ID ]; then
-			rm -rf $BASE/publish/$type/$MEETING_ID
-		fi
-              
-                if [ -d /var/bigbluebutton/published/$type/$MEETING_ID ]; then
-                        rm -rf /var/bigbluebutton/published/$type/$MEETING_ID
-                fi
+	echo "Marking for republish $MEETING_ID"
+	if [[ ! -d $BASE/process/$MEETING_ID ]]; then
+		echo "Processed files for $MEETING_ID do not exist, can't republish"
+		echo "Try rebuilding the recording instead."
+		exit 1
+	fi
 
-                if [ -d /var/bigbluebutton/unpublished/$type/$MEETING_ID ]; then
-                        rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID
-                fi
+	# Clear out the publish done files
+	rm -vf $STATUS/published/$MEETING_ID*
+
+	# Remove the existing 'published' recording files
+	for type in $TYPES; do
+		rm -rf /var/bigbluebutton/published/$type/$MEETING_ID
+		rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID
+		rm -rf /var/bigbluebutton/deleted/$type/$MEETING_ID
 	done
+
+	# Restart processing at the 'processed' step
+	touch $STATUS/processed/$MEETING_ID.done
 }
 
 need_root() {
@@ -170,9 +168,9 @@ while [ $# -gt 0 ]; do
 		shift
                 continue
         fi
-        if [ "$1" = "--list20" ]; then
+        if [ "$1" = "--list-recent" ]; then
                 LIST=1
-		HEAD=20
+		HEAD=10
                 if [ "$2" ]; then
                         WITHDESC=1
                         shift
@@ -340,69 +338,81 @@ if [ $REPUBLISH ]; then
 fi 
 
 if [ $CLEAN ]; then
-	sudo /etc/init.d/bbb-record-core stop
+	sudo /etc/init.d/bbb-record stop
 	for type in $TYPES; do
 		echo " clearning logs in /var/log/bigbluebutton/$type"
 		find /var/log/bigbluebutton/$type -name "*.log" -exec sudo rm '{}' \;
 	done
-	sudo /etc/init.d/bbb-record-core start
+	sudo /etc/init.d/bbb-record start
 fi
 
 if [ $DELETE ]; then
-  if [ ! -z "$MEETING_ID" ]; then
-        for type in $TYPES; do
-                rm -rf /var/bigbluebutton/published/$type/$MEETING_ID*
-                rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID*
-
-                rm -rf /var/bigbluebutton/recording/process/$type/$MEETING_ID*
-                rm -rf /var/bigbluebutton/recording/publish/$type/$MEETING_ID*
-
-                rm -rf /var/bigbluebutton/recording/raw/$MEETING_ID*
-
-                rm -rf /var/log/bigbluebutton/$type/*$MEETING_ID*
-        done
-
-        rm -f /var/bigbluebutton/recording/status/recorded/$MEETING_ID*
-        rm -f /var/bigbluebutton/recording/status/archived/$MEETING_ID*
-        rm -f /var/bigbluebutton/recording/status/processed/$MEETING_ID*
-
-        rm -rf /usr/share/red5/webapps/video/streams/$MEETING_ID
-        rm -f /var/bigbluebutton/deskshare/$MEETING_ID*.flv
-        rm -f /var/freeswitch/meetings/$MEETING_ID*.wav
-		rm -rf /var/bigbluebutton/$MEETING_ID
-
-        echo "deleting: $MEETING_ID"
-  else
-        echo "Give a meeting id or use --deleteall"
+  if [[ -z $MEETING_ID ]]; then
+    echo "No meeting id given"
+    exit 1
   fi
+
+  echo "deleting: $MEETING_ID"
+  # Remove the status files first to avoid issues with concurrent
+  # recording processing
+  rm -f /var/bigbluebutton/recording/status/recorded/$MEETING_ID*
+  rm -f /var/bigbluebutton/recording/status/archived/$MEETING_ID*
+  rm -f /var/bigbluebutton/recording/status/sanity/$MEETING_ID*
+  rm -f /var/bigbluebutton/recording/status/processed/$MEETING_ID*
+  rm -f /var/bigbluebutton/recording/status/published/$MEETING_ID*
+  
+  # Remove all of the related files
+  for type in $TYPES; do
+    rm -rf /var/bigbluebutton/published/$type/$MEETING_ID*
+    rm -rf /var/bigbluebutton/unpublished/$type/$MEETING_ID*
+	rm -rf /var/bigbluebutton/deleted/$type/$MEETING_ID*
+
+    rm -rf /var/bigbluebutton/recording/process/$type/$MEETING_ID*
+    rm -rf /var/bigbluebutton/recording/publish/$type/$MEETING_ID*
+
+    rm -rf /var/log/bigbluebutton/$type/*$MEETING_ID*
+  done
+
+  rm -rf /var/bigbluebutton/recording/raw/$MEETING_ID*
+
+  rm -rf /usr/share/red5/webapps/video/streams/$MEETING_ID
+  rm -rf /usr/share/red5/webapps/video-broadcast/streams/$MEETING_ID
+  rm -f /var/bigbluebutton/screenshare/$MEETING_ID*.flv
+  rm -f /var/freeswitch/meetings/$MEETING_ID*.wav
+  rm -rf /var/bigbluebutton/$MEETING_ID
 fi
 
 if [ $DELETEALL ]; then
-	for type in $TYPES; do
-		rm -rf /var/bigbluebutton/published/$type/*
-		rm -rf /var/bigbluebutton/unpublished/$type/*
+  # Remove the status files first to avoid issues with concurrent
+  # recording processing
+  rm -f /var/bigbluebutton/recording/status/recorded/*
+  rm -f /var/bigbluebutton/recording/status/archived/*
+  rm -f /var/bigbluebutton/recording/status/sanity/*
+  rm -f /var/bigbluebutton/recording/status/processed/*
+  rm -f /var/bigbluebutton/recording/status/published/*
 
-		rm -rf /var/bigbluebutton/recording/process/$type/*
-		rm -rf /var/bigbluebutton/recording/publish/$type/*
-	
-		rm -rf /var/bigbluebutton/recording/raw/*
+  for type in $TYPES; do
+    rm -rf /var/bigbluebutton/published/$type/*
+    rm -rf /var/bigbluebutton/unpublished/$type/*
+    rm -rf /var/bigbluebutton/deleted/$type/*
 
-		rm -rf /var/log/bigbluebutton/$type/*
-	done
+    rm -rf /var/bigbluebutton/recording/process/$type/*
+    rm -rf /var/bigbluebutton/recording/publish/$type/*
 
-	rm -f /var/bigbluebutton/recording/status/recorded/*
-	rm -f /var/bigbluebutton/recording/status/archived/*
-	rm -f /var/bigbluebutton/recording/status/processed/*
-	rm -f /var/bigbluebutton/recording/status/sanity/*
+    rm -rf /var/log/bigbluebutton/$type/*
+  done
 
-	rm -f /usr/share/red5/webapps/video/streams/*.flv
-	rm -f /var/bigbluebutton/deskshare/*.flv
-	rm -f /var/freeswitch/meetings/*.wav
+  rm -rf /var/bigbluebutton/recording/raw/*
+  
+  find /usr/share/red5/webapps/video/streams -name "*.flv" -exec rm '{}' \;
+  find /usr/share/red5/webapps/video-broadcast/streams -name "*.flv" -exec rm '{}' \;
+  rm -f /var/bigbluebutton/screenshare/*.flv
+  rm -f /var/freeswitch/meetings/*.wav
 
-	for meeting in $(ls /var/bigbluebutton | grep "[0-9]\{13\}$"); do
-		echo "deleting: $meeting"
-		rm -rf /var/bigbluebutton/$meeting
-	done
+  for meeting in $(ls /var/bigbluebutton | grep "^[0-9a-f]\{40\}-[[:digit:]]\{13\}$"); do
+    echo "deleting: $meeting"
+    rm -rf /var/bigbluebutton/$meeting
+  done
 fi
 
 if [ $LIST ]; then
@@ -434,15 +444,15 @@ else
 fi 
 
 if [ -z $HEAD ]; then
-	# If we're not called with --list20, show all recordings
+	# If we're not called with --list-recent, show all recordings
 	HEAD=99999
 fi
 
 tmp_file=$(mktemp)
-ls -t /var/bigbluebutton | grep "[0-9]\{13\}$" | head -n $HEAD > $tmp_file
-ls -t /var/bigbluebutton/recording/raw | grep "[0-9]\{13\}$" | head -n $HEAD >> $tmp_file
+ls -t /var/bigbluebutton | grep "^[0-9a-f]\{40\}-[[:digit:]]\{13\}$" | head -n $HEAD > $tmp_file
+ls -t /var/bigbluebutton/recording/raw | grep "^[0-9a-f]\{40\}-[[:digit:]]\{13\}$" | head -n $HEAD >> $tmp_file
                                                  
-#for meeting in $(ls -t /var/bigbluebutton | grep "[0-9]\{13\}$" | head -n $HEAD); do
+#for meeting in $(ls -t /var/bigbluebutton | grep "^[0-9a-f]\{40\}-[[:digit:]]\{13\}$" | head -n $HEAD); do
 for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 	echo -n "$meeting"
 	timestamp=$(echo $meeting | sed s/.*-//g)
@@ -464,7 +474,7 @@ for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 	fi
 
 	#
-	# Check if there area uploaded presentations 
+	# Check if there is any uploaded presentations 
 	if [ -d $RAW_PRESENTATION_SRC/$meeting/$meeting ]; then
 		if [ "$(ls -A $RAW_PRESENTATION_SRC/$meeting/$meeting)" ]; then 
 			echo -n "X"
@@ -488,9 +498,11 @@ for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 		echo -n " "
 	fi
 
+#echo "## $RAW_SCREENSHARE_SRC/$meeting-*.flv"
+#exit
 	#
 	# Check if there is any recorded desktop sharing
-	if ls -A $RAW_DESKSHARE_SRC/$meeting-*.flv &> /dev/null; then
+	if ls -A $RAW_SCREENSHARE_SRC/$meeting/*.flv &> /dev/null; then
 		echo -n "X"
 	else
 		echo -n " "
@@ -539,7 +551,7 @@ for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 	done
 
 	#
-	# Numbe rof slides
+	# Number of slides
 	if [ -d /var/bigbluebutton/$meeting/$meeting ]; then
 		printf "%7s" $(find /var/bigbluebutton/$meeting/$meeting -name "*.swf" | wc -l)
         else
@@ -553,7 +565,7 @@ for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 		recording=$meeting
 
 	#
-	# Checka processed 
+	# Check processed 
 	processed=""
 	for type in $TYPES; do
 		if [ -f $STATUS/processed/$recording-$type.done ]; then
@@ -591,10 +603,14 @@ for meeting in $(cat $tmp_file | sort -t - -k 2 -r| uniq); do
 fi
 	echo
 done
+	if [ -f $tmp_file ]; then
+		rm $tmp_file
+	fi
 	echo
 	echo "--"
-	ps fU tomcat6 -o "%c%a" | grep -v COMMAND | grep -v logging.properties
-
+	systemctl --all --no-pager list-timers bbb-record-core.timer
+	echo "--"
+	systemctl --no-pager status bbb-rap-archive-worker.service bbb-rap-sanity-worker.service bbb-rap-process-worker.service bbb-rap-publish-worker.service
 	echo "--"
 
 	if tail -n 20 /var/log/bigbluebutton/bbb-web.log | grep -q "is recorded. Process it."; then
@@ -606,7 +622,7 @@ done
 fi
 
 if [ $WATCH ]; then
-	watch -n 2 "bbb-record --list20 $WITHDESC"
+	watch -n 2 "bbb-record --list-recent $WITHDESC"
 fi
 
 if [ $ENABLE ]; then

@@ -27,10 +27,14 @@ package org.bigbluebutton.modules.broadcast.models
 	
 	import mx.core.UIComponent;
 	
-	import org.bigbluebutton.common.LogUtil;
+	import org.as3commons.logging.api.ILogger;
+	import org.as3commons.logging.api.getClassLogger;
+	import org.bigbluebutton.core.UsersUtil;
 	import org.bigbluebutton.modules.broadcast.views.BroadcastWindow;
 
 	public class Stream {
+		private static const LOGGER:ILogger = getClassLogger(Stream);
+
 		private var uri:String;
 		private var streamId:String;
 		private var streamName:String;
@@ -73,71 +77,86 @@ package org.bigbluebutton.modules.broadcast.models
 			ns.addEventListener(NetStatusEvent.NET_STATUS, netstreamStatus);
 			ns.addEventListener(AsyncErrorEvent.ASYNC_ERROR, nsAsyncErrorHandler);
 			video.attachNetStream(ns);
-      video.x = videoHolder.x;
-      video.y = videoHolder.y;
-      video.width = videoHolder.width;
-      video.height = videoHolder.height;
+			video.x = videoHolder.x;
+			video.y = videoHolder.y;
+			video.width = videoHolder.width;
+			video.height = videoHolder.height;
 
-      
-			ns.play(streamId);				
-		}		
-				
+			ns.play(streamId);
+		}
+
 		private function netstreamStatus(evt:NetStatusEvent):void {
-			switch(evt.info.code) {			
+			var logData:Object = UsersUtil.initLogData();
+			logData.tags = ["video"];
+			logData.streamStatus = evt.info.code;
+			logData.message = "NetStreamStatus";
+			var stringLog:String = JSON.stringify(logData);
+
+			switch(evt.info.code) {
 				case "NetStream.Play.StreamNotFound":
-					LogUtil.debug("NetStream.Play.StreamNotFound");
-					break;			
+					LOGGER.warn(stringLog);
+					break;
 				case "NetStream.Play.Failed":
-					LogUtil.debug("NetStream.Play.Failed");
+					LOGGER.error(stringLog);
 					break;
-				case "NetStream.Play.Start":	
-					LogUtil.debug("NetStream.Play.Start");
+				case "NetStream.Play.Start":
+					LOGGER.debug(stringLog);
 					break;
-				case "NetStream.Play.Stop":			
-					LogUtil.debug("NetStream.Play.Stop");
+				case "NetStream.Play.Stop":
+					LOGGER.debug(stringLog);
 					break;
 				case "NetStream.Buffer.Full":
-					LogUtil.debug("NetStream.Buffer.Full");
+					LOGGER.warn(stringLog);
 					break;
 				default:
-			}			 
+			}
 		} 
-		
+
 		private function nsAsyncErrorHandler(event:AsyncErrorEvent):void {
-			LogUtil.debug("nsAsyncErrorHandler: " + event);
+			LOGGER.debug("nsAsyncErrorHandler: {0}", [event]);
 		}
 		
 		private function connect():void {
-			LogUtil.debug("Connecting " + uri);
+			LOGGER.debug("Connecting {0}", [uri]);
 			nc = new NetConnection();
+			nc.proxyType = "best";
 			nc.connect(uri);
 			nc.client = this;
 			nc.addEventListener(NetStatusEvent.NET_STATUS, netStatus);
 			nc.addEventListener(SecurityErrorEvent.SECURITY_ERROR, securityErrorHandler);
 		}
-		
-		private function netStatus(evt:NetStatusEvent ):void {		 			
-			switch(evt.info.code) {				
+
+		private function netStatus(evt:NetStatusEvent ):void {
+			var logData:Object = UsersUtil.initLogData();
+			logData.tags = ["video"];
+			logData.streamStatus = evt.info.code;
+
+			switch(evt.info.code) {
 				case "NetConnection.Connect.Success":
-					LogUtil.debug("Successfully connected to broadcast application.");
+					logData.message = "Successfully connected to broadcast application.";
+					LOGGER.debug(JSON.stringify(logData));
 					displayVideo();
-					break;				
+					break;
 				case "NetConnection.Connect.Failed":
-					LogUtil.debug("Failed to connect to broadcast application.");
-					break;				
+					logData.message = "Failed to connect to broadcast application.";
+					LOGGER.error(JSON.stringify(logData));
+					break;
 				case "NetConnection.Connect.Closed":
-					trace("Connection to broadcast application has closed.");
-					break;				
+					logData.message = "Connection to broadcast application has closed.";
+					LOGGER.debug(JSON.stringify(logData));
+					break;
 				case "NetConnection.Connect.Rejected":
-					LogUtil.debug("Connection to broadcast application was rejected.");
-					break;					
-				default:	
-					LogUtil.debug("Connection to broadcast application failed. " + evt.info.code);
-			}			
+					logData.message = "Connection to broadcast application was rejected.";
+					LOGGER.warn(JSON.stringify(logData));
+					break;
+				default:
+					logData.message = "Connection to broadcast application failed";
+					LOGGER.error(JSON.stringify(logData));
+			}
 		}
-		
+
 		private function securityErrorHandler(event:SecurityErrorEvent):void {
-			LogUtil.debug("securityErrorHandler: " + event);
+			LOGGER.debug("securityErrorHandler: {0}", [event]);
 		}
 		
 		public function onBWCheck(... rest):Number { 
@@ -149,7 +168,7 @@ package org.bigbluebutton.modules.broadcast.models
 			if (rest.length > 0) p_bw = rest[0]; 
 			// your application should do something here 
 			// when the bandwidth check is complete 
-			LogUtil.debug("bandwidth = " + p_bw + " Kbps."); 
+			LOGGER.debug("bandwidth = {0} Kbps.", [p_bw]); 
 		}
 		
 		public function stop():void {
@@ -161,12 +180,11 @@ package org.bigbluebutton.modules.broadcast.models
 		}
 		
 		public function onCuePoint(infoObject:Object):void {
-			LogUtil.debug("onCuePoint");
+			LOGGER.debug("onCuePoint");
 		}
 		
 		public function onMetaData(info:Object):void {
-			LogUtil.debug("****metadata: width=" + info.width + " height=" + info.height);
-      trace("****metadata: width=" + info.width + " height=" + info.height);
+			LOGGER.debug("****metadata: width={0} height={1}" + [info.width, info.height]);
 			videoWidth = info.width;
 			videoHeight = info.height;
       
@@ -180,7 +198,7 @@ package org.bigbluebutton.modules.broadcast.models
     }
     
 		public function onPlayStatus(infoObject:Object):void {
-			LogUtil.debug("onPlayStatus");
+			LOGGER.debug("onPlayStatus");
 		}		
 		
     private function centerToWindow():void{

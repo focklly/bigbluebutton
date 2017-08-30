@@ -20,7 +20,9 @@
 package org.bigbluebutton.presentation.imp;
 
 import java.io.File;
+
 import org.bigbluebutton.presentation.PageConverter;
+import org.bigbluebutton.presentation.UploadedPresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,9 +31,9 @@ public class Jpeg2SwfPageConverter implements PageConverter {
 	
 	private String SWFTOOLS_DIR;
 	
-	public boolean convert(File presentationFile, File output, int page){
+	public boolean convert(File presentationFile, File output, int page, UploadedPresentation pres){
 		
-        String COMMAND = SWFTOOLS_DIR + "/jpeg2swf -o " + output.getAbsolutePath() + " " + presentationFile.getAbsolutePath();
+        String COMMAND = SWFTOOLS_DIR + File.separator + "jpeg2swf -o " + output.getAbsolutePath() + " " + presentationFile.getAbsolutePath();
         
         boolean done = new ExternalProcessExecutor().exec(COMMAND, 60000);          
 		
